@@ -6,6 +6,7 @@ const { MongoClient, ServerApiVersion,ObjectId } = require("mongodb");
 const { application } = require("express");
 const app = express();
 const port = process.env.PORT || 5000;
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY)
 
 app.use(cors());
 app.use(express.json());
@@ -44,6 +45,7 @@ async function run() {
     const bookingsCollection = client.db("doctor").collection("bookings");
     const usersCollection = client.db("doctor").collection("users");
     const doctorsCollection = client.db("doctor").collection("doctors");
+    const paymentCollection = client.db("doctor").collection("payment");
 
     const verifyAdmin = async(req,res,next)=>{
       const decodedEmail = req.decoded.email;
@@ -111,7 +113,7 @@ async function run() {
         { email: email },
         process.env.ACCESS_TOKEN_SECRET,
         {
-          expiresIn: "1h",
+          expiresIn: "4h",
         }
       );
       res.send({ result, token });
@@ -161,6 +163,21 @@ async function run() {
       const result = await bookingsCollection.insertOne(booking);
       return res.send({ success: true, result });
     });
+
+    app.patch('/booking/:id',verifyJwt,async(req,res)=>{
+      const id = req.params.id 
+      const filter = {_id:ObjectId(id)}
+      const paymentId = req.body
+      const updatedDoc = {
+        $set:{
+          paid:true,
+          transactionId:paymentId.transactionId
+        }
+      }
+      const updateBooking = await bookingsCollection.updateOne(filter,updatedDoc)
+      const result = await paymentCollection.insertOne(paymentId)
+      res.send(updateBooking)
+    })
     //  Doctor
     app.get('/doctor',verifyJwt,verifyAdmin,async(req,res)=>{
       const doctors = await doctorsCollection.find().toArray()
@@ -177,6 +194,27 @@ async function run() {
       const result = await doctorsCollection.deleteOne(filter)
       res.send(result)
     })
+
+    /// Payment 
+    app.get('/booking/:id',async(req,res)=>{
+      const id = req.params.id 
+      const filter = {_id:ObjectId(id)}
+      const result = await bookingsCollection.findOne(filter)
+      res.send(result)
+    })
+
+    app.post('/create-payment-intent',verifyJwt,async(req,res)=>{
+      const service = req.body
+      const price  = service.price
+      const amount = price*100 
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types:['card'],
+      });
+      res.send({clientSecret: paymentIntent.client_secret});
+    })
+
   } finally {
   }
 }
