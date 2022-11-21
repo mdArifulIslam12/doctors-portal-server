@@ -65,7 +65,7 @@ async function run() {
       const services = await curos.toArray();
       res.send(services);
     });
-    // Get Admin
+    // Get Admins
     app.get("/admin/:email", async (req, res) => {
       const email = req.params.email;
       const user = await usersCollection.findOne({ email: email });
